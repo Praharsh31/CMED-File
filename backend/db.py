@@ -1,5 +1,6 @@
 
 import os
+import streamlit as st
 import mysql.connector
 import bcrypt
 from dotenv import load_dotenv
@@ -7,13 +8,25 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def get_setting(key, default=None):
+    """Read settings from Streamlit Cloud Secrets or local .env."""
+    try:
+        value = st.secrets.get(key)
+        if value is not None:
+            return value
+    except Exception:
+        pass
+
+    return os.getenv(key, default)
+
+
 def get_connection():
     return mysql.connector.connect(
-        host=os.getenv("DB_HOST"),
-        port=int(os.getenv("DB_PORT", "3306")),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        database=os.getenv("DB_NAME")
+        host=get_setting("DB_HOST"),
+        port=int(get_setting("DB_PORT", "3306")),
+        user=get_setting("DB_USER"),
+        password=get_setting("DB_PASSWORD"),
+        database=get_setting("DB_NAME")
     )
 
 
@@ -83,12 +96,15 @@ def set_account_password(role, email, password):
     }
 
     if role not in tables:
-        raise ValueError("Password setup is only available for students and tutors.")
+        raise ValueError(
+            "Password setup is only available for students and tutors."
+        )
 
     if len(password) < 8:
         raise ValueError("Password must contain at least 8 characters.")
 
     table, id_column = tables[role]
+
     password_hash = bcrypt.hashpw(
         password.encode("utf-8"),
         bcrypt.gensalt()
@@ -98,7 +114,8 @@ def set_account_password(role, email, password):
     try:
         cursor = connection.cursor()
         cursor.execute(
-            f"SELECT {id_column}, PasswordHash FROM {table} WHERE Email = %s LIMIT 1",
+            f"SELECT {id_column}, PasswordHash FROM {table} "
+            "WHERE Email = %s LIMIT 1",
             (email.strip(),)
         )
         account = cursor.fetchone()
@@ -113,13 +130,16 @@ def set_account_password(role, email, password):
             )
 
         cursor.execute(
-            f"UPDATE {table} SET PasswordHash = %s WHERE {id_column} = %s",
+            f"UPDATE {table} SET PasswordHash = %s WHERE "
+            f"{id_column} = %s",
             (password_hash, account[0])
         )
         connection.commit()
         return True
+
     except Exception:
         connection.rollback()
         raise
+
     finally:
         connection.close()
